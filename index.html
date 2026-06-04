@@ -40,7 +40,7 @@
       padding: 0 !important;
       display: flex !important;
       flex-direction: column !important;
-      align-items: center !important;
+      align-items: stretch !important;   /* children fill full width */
       width: 100% !important;
     }
     /* Keep button group below the stimulus */
@@ -1326,7 +1326,7 @@ function buildTestTrials(condition) {
 
 // Inline styles — immune to any platform CSS overrides
 const S = {
-  wrap:  'max-width:800px;margin:0 auto;padding:50px 40px;font-family:Arial,sans-serif;font-size:21px;line-height:1.65;color:#111;text-align:center;background:white;',
+  wrap:  'width:100%;max-width:800px;box-sizing:border-box;margin:0 auto;padding:50px 40px;font-family:Arial,sans-serif;font-size:21px;line-height:1.65;color:#111;text-align:center;background:white;',
   h1:    'font-size:34px;font-weight:bold;margin-bottom:28px;',
   hint:  'margin-top:40px;font-size:17px;color:#555;',
   good:  'color:green;font-weight:bold;',
