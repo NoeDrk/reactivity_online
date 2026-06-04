@@ -1391,20 +1391,18 @@ if (SIMULATE) {
     if (html === _lastHTML) return;   // already responded to this trial
     _lastHTML = html;
 
-    // ── Button-response trial (consent, comprehension, debrief, etc.) ──
+    // ── Button-response trial (consent, debrief) ──
     const buttons = display.querySelectorAll('.jspsych-btn');
     if (buttons.length) {
-      // Comprehension check answer is always index 1 (correct option).
-      // All other button trials get index 0 (first / only button).
-      const isComprehension = display.textContent.includes('what happens next');
-      const idx = isComprehension ? 1 : 0;
-      setTimeout(() => { buttons[idx] && buttons[idx].click(); }, 160);
+      setTimeout(() => { buttons[0] && buttons[0].click(); }, 160);
       return;
     }
 
-    // ── Keyboard-response trial (instruction / feedback screens) ──
+    // ── Keyboard-response trial ──
+    // Comprehension check: press B (correct answer). Everything else: SPACE.
+    const key = display.textContent.includes('Comprehension check') ? 'b' : ' ';
     setTimeout(() => {
-      document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+      document.dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true }));
     }, 160);
   }, 250);
 }
@@ -1590,29 +1588,35 @@ const timeline = [
   `),
 
   // ── 9. Comprehension check (loop until correct) ──────────────────
+  // Uses html-keyboard-response with choices embedded in the stimulus so
+  // jsPsych's button renderer — which causes layout issues on cognition.run —
+  // is avoided entirely. Participant presses A, B, or C.
   (() => {
     comprehensionPassed = false;
     let lastAnswer      = null;
 
-    const question = {
-      type:     jsPsychHtmlButtonResponse,
-      stimulus: `<div style="${S.wrap}">
-        <h1>Comprehension check</h1>
-        <p>After giving your initial answer, what happens next?</p>
-      </div>`,
-      choices: [
-        'The experiment moves straight to the next trial',
-        'You see another participant\'s answer and can keep or change your original answer',
-        'You must always change your answer',
-      ],
+    const OPT = 'margin:12px 0;padding:14px 20px;border:2px solid #ccc;border-radius:8px;background:#f5f5f5;cursor:default;text-align:left;';
 
+    const question = {
+      type:     jsPsychHtmlKeyboardResponse,
+      stimulus: `<div style="${S.wrap}">
+        <h1 style="${S.h1}">Comprehension check</h1>
+        <p>After giving your initial answer, what happens next?</p>
+        <div style="max-width:620px;margin:28px auto 0;font-size:19px;">
+          <div style="${OPT}"><strong>A</strong> &nbsp;— The experiment moves straight to the next trial</div>
+          <div style="${OPT}"><strong>B</strong> &nbsp;— You see another participant's answer and can keep or change your original answer</div>
+          <div style="${OPT}"><strong>C</strong> &nbsp;— You must always change your answer</div>
+        </div>
+        <p style="${S.hint}">Press <strong>A</strong>, <strong>B</strong> or <strong>C</strong>.</p>
+      </div>`,
+      choices:   ['a', 'b', 'c'],
       on_finish: function (data) { lastAnswer = data.response; },
     };
 
     const feedback = {
       type: jsPsychHtmlKeyboardResponse,
       stimulus: function () {
-        if (lastAnswer === 1) {          // index 1 = correct answer
+        if (lastAnswer === 'b') {        // B = correct answer
           comprehensionPassed = true;
           return `<div style="${S.wrap}">
             <h1 style="${S.good}">Correct!</h1>
