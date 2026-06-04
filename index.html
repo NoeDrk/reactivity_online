@@ -38,6 +38,16 @@
       background: white !important;
       max-width: none !important;
       padding: 0 !important;
+      display: flex !important;
+      flex-direction: column !important;
+      align-items: center !important;
+      width: 100% !important;
+    }
+    /* Keep button group below the stimulus */
+    .jspsych-html-button-response-btngroup {
+      margin-top: 24px;
+      text-align: center;
+      width: 100%;
     }
 
     /* ── Canvas scaling ──────────────────────────────────────────── */
@@ -1149,23 +1159,23 @@ function makeWarningTrial() {
       type: jsPsychHtmlKeyboardResponse,
       stimulus: function () {
         if (ATTENTION.warningType === 'streak') {
-          return `<div class="instr">
+          return `<div style="${S.wrap}">
             <h1>⚠ Please pay attention</h1>
             <p>We noticed you pressed the same key
                <strong>${CFG.ATTN_STREAK_LIMIT} times in a row</strong>.</p>
             <p>Please look carefully at each dot cloud before responding —
                the majority colour changes on every trial.</p>
-            <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+            <p style="${S.hint}">Press <strong>SPACE</strong> to continue.</p>
           </div>`;
         }
-        return `<div class="instr">
+        return `<div style="${S.wrap}">
           <h1>⚠ Please slow down</h1>
           <p>We noticed ${CFG.ATTN_RT_COUNT} consecutive responses
              under <strong>${CFG.ATTN_RT_LIMIT} ms</strong> — faster than
              it is possible to process the image.</p>
           <p>Please take a moment to look at the dots carefully
              before pressing a key.</p>
-          <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+          <p style="${S.hint}">Press <strong>SPACE</strong> to continue.</p>
         </div>`;
       },
       choices:   [' '],
@@ -1314,13 +1324,22 @@ function buildTestTrials(condition) {
 //  INSTRUCTION SCREEN HELPER
 // ══════════════════════════════════════════════════════════════════════════════
 
+// Inline styles — immune to any platform CSS overrides
+const S = {
+  wrap:  'max-width:800px;margin:0 auto;padding:50px 40px;font-family:Arial,sans-serif;font-size:21px;line-height:1.65;color:#111;text-align:center;background:white;',
+  h1:    'font-size:34px;font-weight:bold;margin-bottom:28px;',
+  hint:  'margin-top:40px;font-size:17px;color:#555;',
+  good:  'color:green;font-weight:bold;',
+  bad:   'color:red;font-weight:bold;',
+};
+
 function instrScreen(title, body) {
   return {
     type:     jsPsychHtmlKeyboardResponse,
-    stimulus: `<div class="instr">
-      <h1>${title}</h1>
+    stimulus: `<div style="${S.wrap}">
+      <h1 style="${S.h1}">${title}</h1>
       ${body}
-      <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+      <p style="${S.hint}">Press <strong>SPACE</strong> to continue.</p>
     </div>`,
     choices:  [' '],
   };
@@ -1337,7 +1356,7 @@ const jsPsych = initJsPsych({
       // In simulation mode: download the CSV locally instead of posting to server.
       jsPsych.data.get().localSave('csv', 'simulation_data.csv');
       document.body.innerHTML =
-        '<div class="instr"><h1>Simulation complete</h1>' +
+        '<div style="${S.wrap}"><h1>Simulation complete</h1>' +
         '<p>CSV downloaded as <strong>simulation_data.csv</strong>.</p></div>';
       return;
     }
@@ -1425,7 +1444,7 @@ const timeline = [
   ...(!SIMULATE ? [{
     type:         jsPsychFullscreen,
     fullscreen_mode: true,
-    message:      `<div class="instr">
+    message:      `<div style="${S.wrap}">
       <h1>Full-screen mode</h1>
       <p>This experiment must be run in full-screen.<br>
          Click the button below to continue.</p>
@@ -1436,7 +1455,7 @@ const timeline = [
   // ── 1. Consent form ─────────────────────────────────────────────
   {
     type:     jsPsychHtmlButtonResponse,
-    stimulus: `<div class="instr">
+    stimulus: `<div style="${S.wrap}">
       <h1>Informed Consent</h1>
       <p>You are about to take part in a study on visual perception and
          decision-making. The task takes approximately <strong>30–40 minutes</strong>.</p>
@@ -1504,20 +1523,20 @@ const timeline = [
             const last = jsPsych.data.get().last(1).values()[0];
             if (last && !last.timeout && last.accuracy === 1) {
               demoPassed = true;
-              return `<div class="instr">
-                <h1 class="correct">✓ Correct!</h1>
+              return `<div style="${S.wrap}">
+                <h1 style="${S.good}">✓ Correct!</h1>
                 <p>Well done. Now we will practice with dots that
                    disappear quickly.</p>
-                <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+                <p style="${S.hint}">Press <strong>SPACE</strong> to continue.</p>
               </div>`;
             }
-            return `<div class="instr">
-              <h1 class="wrong">✗ Incorrect — try again</h1>
+            return `<div style="${S.wrap}">
+              <h1 style="${S.bad}">✗ Incorrect — try again</h1>
               <p>Look carefully at whether there are more
                  <strong style="color:${CFG.COLOR_RED}">RED</strong> or
                  <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots,
                  then press the matching arrow.</p>
-              <p class="hint">Press <strong>SPACE</strong> to try again.</p>
+              <p style="${S.hint}">Press <strong>SPACE</strong> to try again.</p>
             </div>`;
           },
           choices: [' '],
@@ -1577,7 +1596,7 @@ const timeline = [
 
     const question = {
       type:     jsPsychHtmlButtonResponse,
-      stimulus: `<div class="instr">
+      stimulus: `<div style="${S.wrap}">
         <h1>Comprehension check</h1>
         <p>After giving your initial answer, what happens next?</p>
       </div>`,
@@ -1595,8 +1614,8 @@ const timeline = [
       stimulus: function () {
         if (lastAnswer === 1) {          // index 1 = correct answer
           comprehensionPassed = true;
-          return `<div class="instr">
-            <h1 class="correct">Correct!</h1>
+          return `<div style="${S.wrap}">
+            <h1 style="${S.good}">Correct!</h1>
             <p>After your initial decision, you will see another participant's
                response. You can then freely <strong>keep</strong> or
                <strong>change</strong> your original answer.</p>
@@ -1608,11 +1627,11 @@ const timeline = [
                <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots.
                If you click <strong>KEEP</strong>, your answer stays
                <strong style="color:${CFG.COLOR_RED}">RED</strong>.</p>
-            <p class="hint">Press <strong>SPACE</strong> to begin.</p>
+            <p style="${S.hint}">Press <strong>SPACE</strong> to begin.</p>
           </div>`;
         }
-        return `<div class="instr">
-          <h1 class="wrong">Incorrect — please read carefully</h1>
+        return `<div style="${S.wrap}">
+          <h1 style="${S.bad}">Incorrect — please read carefully</h1>
           <p>After your initial dot decision, you will see the response of
              another participant who saw the same dots. You can then freely
              choose to <strong>keep</strong> your original answer or
@@ -1625,7 +1644,7 @@ const timeline = [
              <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots.
              If you click <strong>KEEP</strong>, your answer stays
              <strong style="color:${CFG.COLOR_RED}">RED</strong>.</p>
-          <p class="hint">Press <strong>SPACE</strong> to try again.</p>
+          <p style="${S.hint}">Press <strong>SPACE</strong> to try again.</p>
         </div>`;
       },
       choices: [' '],
@@ -1664,7 +1683,7 @@ const timeline = [
   // ── 14. Debrief ─────────────────────────────────────────────────
   {
     type:     jsPsychHtmlButtonResponse,
-    stimulus: `<div class="instr">
+    stimulus: `<div style="${S.wrap}">
       <h1>Debrief</h1>
       <p><strong>Thank you for participating!</strong></p>
       <p>In this experiment, the "other participant's decision" was
