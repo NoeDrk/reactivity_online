@@ -1,0 +1,1692 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Visual Decision Task</title>
+
+  <!-- jsPsych 7 -->
+  <script src="https://unpkg.com/jspsych@7.3.4"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-keyboard-response@1.1.3"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-html-button-response@1.2.0"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-fullscreen@1.2.1"></script>
+  <script src="https://unpkg.com/@jspsych/plugin-call-function@1.1.3"></script>
+  <link rel="stylesheet" href="https://unpkg.com/jspsych@7.3.4/css/jspsych.css">
+
+  <style>
+    /* ── Global ──────────────────────────────────────────────────── */
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      background: white;
+      overflow: hidden;
+    }
+
+    /* Override jsPsych defaults so background stays white */
+    .jspsych-display-element {
+      background: white !important;
+    }
+    .jspsych-content-wrapper {
+      background: white !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+      min-height: 100vh !important;
+      padding: 0 !important;
+    }
+    .jspsych-content {
+      background: white !important;
+      max-width: none !important;
+      padding: 0 !important;
+    }
+
+    /* ── Canvas scaling ──────────────────────────────────────────── */
+    canvas {
+      display: block;
+      margin: 0 auto;
+      max-width: 100vw;
+      max-height: 100vh;
+      background: white;
+    }
+
+    /* ── Instruction pages ───────────────────────────────────────── */
+    .instr {
+      max-width: 860px;
+      margin: 0 auto;
+      padding: 50px 40px;
+      font-family: Arial, sans-serif;
+      font-size: 21px;
+      line-height: 1.65;
+      color: #111;
+      text-align: center;
+      background: white;
+    }
+    .instr h1 {
+      font-size: 34px;
+      margin-bottom: 28px;
+    }
+    .instr .hint {
+      margin-top: 40px;
+      font-size: 17px;
+      color: #555;
+    }
+    .instr .choice {
+      display: inline-block;
+      margin: 10px 16px;
+      padding: 14px 40px;
+      font-size: 20px;
+      border: 2px solid #333;
+      border-radius: 8px;
+      cursor: pointer;
+      background: #f5f5f5;
+    }
+    .instr .choice:hover { background: #dde; }
+    .instr .correct { color: green; font-weight: bold; }
+    .instr .wrong   { color: red;   font-weight: bold; }
+  </style>
+</head>
+<body>
+<script>
+'use strict';
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CONFIGURATION
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Testing flag ──────────────────────────────────────────────────────────────
+//  Set to true while piloting: short timings and only a handful of trials.
+//  Set to false for the real experiment.
+const TESTING = false;
+
+// ── Simulation flag ───────────────────────────────────────────────────────────
+//  Set to true to run an automated bot through all trials.
+//  The bot responds randomly (75 % correct on dot trials) and the completed
+//  CSV is downloaded automatically at the end so you can check data format.
+//  Uses the same trial counts as the current TESTING setting.
+//  Leave false for real participants.
+const SIMULATE = false;
+
+const CFG = {
+  // Stimulus
+  DOT_NB:              160,
+  CIRCLE_RADIUS:       280,
+  DOT_RADIUS:          5.5,
+  MIN_DIST_FACTOR:     2.5,   // min separation = DOT_RADIUS × factor
+
+  // Equiluminant colours  (luminance ≈ 0.326)
+  COLOR_RED:  '#E11C1C',
+  COLOR_BLUE: '#0049D6',
+
+  // Timing  (ms)  — near-zero in testing/simulation so you can click through quickly
+  T_FIXATION:       (TESTING || SIMULATE) ?    1 : 1000,
+  T_FIXATION_SHORT: (TESTING || SIMULATE) ?    1 :  500,
+  T_INTER:          (TESTING || SIMULATE) ?    1 :  300,
+  T_INTER_LONG:     (TESTING || SIMULATE) ?    1 :  750,
+  T_BLANK:          (TESTING || SIMULATE) ?    1 : 1220,
+  TIME_DOTS:        (TESTING || SIMULATE) ?  200 :  500,
+  T_TIMEOUT:                                  7000,
+  T_TOO_SLOW:       (TESTING || SIMULATE) ?  200 : 1000,
+  SPINNER_DURATION: (TESTING || SIMULATE) ?  300 : 2000,
+
+  // Trial counts
+  // ↓ Set both to 8 while developing; change the right-hand value to 240 / 100
+  //   when ready for the real experiment.
+  NB_PRETESTS:       TESTING ?   4 :    100,
+  NB_TESTS_PER_COND: TESTING ?   8 :    240,
+  // (all pretest trials use QUEST+; MIN_TRIALS_BEFORE_DIFFICULTY = 100)
+
+  // QUEST+ accuracy targets
+  TARGET_P_EASY:       0.84,
+  TARGET_P_MEDIUM:     0.72,
+  TARGET_P_HARD:       0.60,
+
+  // Catch trials  (injected into test blocks only, not pretest)
+  CATCH_DIFFERENCE:    70,                  // dot difference — near-ceiling, should be obvious
+  NB_CATCH_PER_BLOCK: TESTING ?  2 :  8,   // 2 per block in testing, 8 in real experiment
+  CATCH_MIN_SPACING:  TESTING ?  2 : 20,   // minimum real trials between two catch trials
+
+  // Attention warnings
+  ATTN_STREAK_LIMIT:   20,   // warn after N consecutive same-key presses
+  ATTN_RT_COUNT:        5,   // sliding window size for RT check
+  ATTN_RT_LIMIT:       150,  // warn if all N recent RTs are below this (ms)
+
+  // Canvas logical size  (pixels)
+  CANVAS_W:            1200,
+  CANVAS_H:             900,
+
+  // Fixed experimental conditions
+  RATING_TYPE:        'confidence',
+};
+
+// Canvas centre  (mirrors PsychoPy's (0,0) origin)
+const CX = CFG.CANVAS_W / 2;   // 600
+const CY = CFG.CANVAS_H / 2;   // 450
+
+// (PsychoPy coordinate conversion: canvas_x = CX + x,  canvas_y = CY − y)
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  PROLIFIC INTEGRATION  &  PARTICIPANT SETUP
+// ══════════════════════════════════════════════════════════════════════════════
+
+const urlParams         = new URLSearchParams(window.location.search);
+const PROLIFIC_PID      = urlParams.get('PROLIFIC_PID')  || 'TEST';
+const PROLIFIC_STUDY_ID = urlParams.get('STUDY_ID')      || 'TEST';
+const PROLIFIC_SESSION  = urlParams.get('SESSION_ID')    || 'TEST';
+
+// Arrow position: randomised per participant (1–4)
+//   Position controls left arrow colour and left keep/change label:
+//   1 → left=blue,  left=keep    3 → left=blue,  left=change
+//   2 → left=red,   left=keep    4 → left=red,   left=change
+const ARROWS_POSITION = Math.floor(Math.random() * 4) + 1;
+
+function getLeftDotColor()   { return [1, 3].includes(ARROWS_POSITION) ? 'blue' : 'red'; }
+function getLeftKeepChange() { return [1, 2].includes(ARROWS_POSITION) ? 'keep' : 'change'; }
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  SHARED RUNTIME STATE
+// ══════════════════════════════════════════════════════════════════════════════
+
+const STATE = {
+  q:            null,   // QuestPlus instance (created before pretest)
+  difficulties: null,   // { easy, medium, hard } — set after pretest
+  trialNum:     0,
+};
+
+// Per-trial handoff: dot trial → blank/slider → keep/change
+const TRIAL_STATE = {
+  timeout:          false,
+  selectedColor:    null,
+  otherGuessColor:  null,
+  correctColor:     null,
+  intensity:        null,
+  difficulty:       null,
+  trialType:        null,
+  agreeOrDisagree:  null,
+  confidenceValue:  null,
+  confidenceRT:     null,
+};
+
+// Attention check tracking (updated in DotPlugin after every key press)
+const ATTENTION = {
+  lastKey:       null,   // 'left' | 'right' — most recent arrow key pressed
+  sameKeyStreak: 0,      // consecutive presses of the same key
+  recentRTs:     [],     // sliding window of the last ATTN_RT_COUNT dot-trial RTs
+  warningNeeded: false,  // true → show warning screen after current dot trial
+  warningType:   null,   // 'streak' | 'rt'
+};
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  UTILITY: FISHER–YATES SHUFFLE  (in-place)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function shuffle(arr) {
+  for (let i = arr.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [arr[i], arr[j]] = [arr[j], arr[i]];
+  }
+  return arr;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  QUEST+   (Bayesian adaptive Weibull staircase, 2AFC)
+// ══════════════════════════════════════════════════════════════════════════════
+//
+//  Psychometric function:
+//    p(correct | x, α, β) = γ + (1 − δ − γ) · (1 − exp(−(x/α)^β))
+//  where  γ = 0.5  (2AFC chance),  δ = 0.02  (lapse rate)
+//
+//  Parameter space:
+//    threshold α ∈ {1 … 39}   (39 values)
+//    slope     β ∈ {1 … 9}    ( 9 values)
+//
+//  Stimulus domain:
+//    intensity ∈ {1 … DOT_NB−2}  (= 1 … 158 for DOT_NB = 160)
+//
+//  next_stim() picks the stimulus that minimises expected posterior entropy.
+//  update()    performs a Bayesian posterior update after each response.
+// ══════════════════════════════════════════════════════════════════════════════
+
+class QuestPlus {
+  constructor() {
+    this.gamma  = 0.5;
+    this.delta  = 0.02;
+
+    this.thresholds  = Array.from({ length: 39 }, (_, i) => i + 1);  // 1…39
+    this.slopes      = Array.from({ length:  9 }, (_, i) => i + 1);  // 1…9
+    this.intensities = Array.from({ length: CFG.DOT_NB - 2 }, (_, i) => i + 1); // 1…158
+
+    const nT = this.thresholds.length;   // 39
+    const nS = this.slopes.length;       //  9
+
+    // Uniform prior:  posterior[t][s]
+    const uniform = 1 / (nT * nS);
+    this.posterior = Array.from({ length: nT },
+      () => new Float64Array(nS).fill(uniform)
+    );
+
+    // Precompute Weibull table:  pCorrect[t][s][xIdx]
+    // Uses Float64Arrays for speed.
+    this.pCorrect = Array.from({ length: nT }, (_, t) =>
+      Array.from({ length: nS }, (_, s) =>
+        new Float64Array(this.intensities.map(x =>
+          this._weibull(x, this.thresholds[t], this.slopes[s])
+        ))
+      )
+    );
+
+    this.stimHistory     = [];
+    this.responseHistory = [];
+  }
+
+  // ── Weibull psychometric function ────────────────────────────────
+  _weibull(x, alpha, beta) {
+    const p = this.gamma
+      + (1 - this.delta - this.gamma) * (1 - Math.exp(-Math.pow(x / alpha, beta)));
+    return Math.min(Math.max(p, 0), 1);
+  }
+
+  // ── Expected accuracy at intensity index xIdx ────────────────────
+  //    Integrated over the current posterior.
+  _expectedAccuracy(xIdx) {
+    let acc = 0;
+    for (let t = 0; t < this.thresholds.length; t++) {
+      const post = this.posterior[t];
+      const pRow = this.pCorrect[t];
+      for (let s = 0; s < this.slopes.length; s++) {
+        acc += post[s] * pRow[s][xIdx];
+      }
+    }
+    return acc;
+  }
+
+  // ── Pick next stimulus (minimise expected posterior entropy) ─────
+  nextStim() {
+    let bestIdx    = 0;
+    let minEntropy = Infinity;
+
+    for (let x = 0; x < this.intensities.length; x++) {
+      const pC = this._expectedAccuracy(x);
+      const pI = 1 - pC;
+      let H = 0;
+
+      for (let resp = 0; resp < 2; resp++) {
+        const pResp = resp === 0 ? pC : pI;
+        if (pResp < 1e-12) continue;
+
+        // Compute unnormalised new posterior
+        let norm = 0;
+        const tmp = Array.from({ length: this.thresholds.length }, (_, t) => {
+          const row = new Float64Array(this.slopes.length);
+          const srcPost = this.posterior[t];
+          const srcP    = this.pCorrect[t];
+          for (let s = 0; s < this.slopes.length; s++) {
+            const lik = resp === 0 ? srcP[s][x] : (1 - srcP[s][x]);
+            const val = srcPost[s] * lik;
+            row[s] = val;
+            norm  += val;
+          }
+          return row;
+        });
+
+        // Shannon entropy of normalised posterior
+        let entropy = 0;
+        for (let t = 0; t < this.thresholds.length; t++) {
+          for (let s = 0; s < this.slopes.length; s++) {
+            const p = tmp[t][s] / norm;
+            if (p > 1e-15) entropy -= p * Math.log(p);
+          }
+        }
+
+        H += pResp * entropy;
+      }
+
+      if (H < minEntropy) { minEntropy = H; bestIdx = x; }
+    }
+
+    return this.intensities[bestIdx];
+  }
+
+  // ── Bayesian posterior update ────────────────────────────────────
+  update(intensity, correct) {
+    this.stimHistory.push(intensity);
+    this.responseHistory.push(correct);
+
+    const xIdx = this.intensities.indexOf(intensity);
+    let norm = 0;
+
+    for (let t = 0; t < this.thresholds.length; t++) {
+      const post = this.posterior[t];
+      const pRow = this.pCorrect[t];
+      for (let s = 0; s < this.slopes.length; s++) {
+        const lik = correct ? pRow[s][xIdx] : (1 - pRow[s][xIdx]);
+        post[s]  *= lik;
+        norm     += post[s];
+      }
+    }
+
+    // Normalise
+    for (let t = 0; t < this.thresholds.length; t++) {
+      const post = this.posterior[t];
+      for (let s = 0; s < this.slopes.length; s++) post[s] /= norm;
+    }
+  }
+
+  // ── Find intensity closest to a target accuracy ─────────────────
+  getTargetIntensity(targetP) {
+    if (this.stimHistory.length === 0) return null;
+    let bestIdx  = 0;
+    let bestDiff = Infinity;
+    for (let x = 0; x < this.intensities.length; x++) {
+      const diff = Math.abs(this._expectedAccuracy(x) - targetP);
+      if (diff < bestDiff) { bestDiff = diff; bestIdx = x; }
+    }
+    return this.intensities[bestIdx];
+  }
+
+  // ── Return { easy, medium, hard } intensity values ───────────────
+  getDifficulties() {
+    const easy   = this.getTargetIntensity(CFG.TARGET_P_EASY);
+    const medium = this.getTargetIntensity(CFG.TARGET_P_MEDIUM);
+    const hard   = this.getTargetIntensity(CFG.TARGET_P_HARD);
+    if (easy === null || medium === null || hard === null) return null;
+    // Sanity: fewer dots difference = harder task
+    if (!(hard <= medium && medium <= easy)) return null;
+    return { easy, medium, hard };
+  }
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  DOT STIMULUS  –  generation & drawing
+// ══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Generate dot positions inside a circle with minimum spacing.
+ * Returns { xs, ys, colors } where colors[i] ∈ {'red','blue'}.
+ */
+function generateDots(correctColor, difference) {
+  const half      = CFG.DOT_NB >> 1;
+  const redCount  = correctColor === 'red'
+    ? half + (difference >> 1)
+    : half - (difference >> 1);
+  const blueCount = CFG.DOT_NB - redCount;
+
+  const minDist  = CFG.DOT_RADIUS * CFG.MIN_DIST_FACTOR;
+  const effR     = CFG.CIRCLE_RADIUS - CFG.DOT_RADIUS * 1.5;
+  const xs = [], ys = [];
+
+  for (let i = 0; i < CFG.DOT_NB; i++) {
+    let x, y;
+    for (let attempt = 0; attempt < 1000; attempt++) {
+      const angle  = Math.random() * 2 * Math.PI;
+      const radius = effR * Math.sqrt(Math.random());
+      x = radius * Math.cos(angle);
+      y = radius * Math.sin(angle);
+      const ok = xs.every((ox, j) => Math.hypot(x - ox, y - ys[j]) >= minDist);
+      if (ok) break;
+    }
+    xs.push(x);
+    ys.push(y);
+  }
+
+  // Build and shuffle color array
+  const colors = [
+    ...Array(redCount).fill('red'),
+    ...Array(blueCount).fill('blue'),
+  ];
+  shuffle(colors);
+
+  return { xs, ys, colors };
+}
+
+/**
+ * Draw the fixation cross centred at canvas (cx, cy).
+ */
+function drawFixation(ctx, cx, cy) {
+  ctx.save();
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth   = 2.2;
+  ctx.lineCap     = 'square';
+  ctx.beginPath();
+  ctx.moveTo(cx - 18, cy); ctx.lineTo(cx + 18, cy);
+  ctx.moveTo(cx, cy - 18); ctx.lineTo(cx, cy + 18);
+  ctx.stroke();
+  ctx.restore();
+}
+
+/**
+ * Draw the dot circle (and optionally the dots themselves).
+ * @param {object} dots       – { xs, ys, colors }
+ * @param {number[]} circlePos – [canvasX, canvasY] of circle centre
+ * @param {boolean} showDots  – whether to render the dots
+ */
+function drawDotStimulus(ctx, dots, circlePos, showDots) {
+  const [cx, cy] = circlePos;
+
+  // Circle outline
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(cx, cy, CFG.CIRCLE_RADIUS, 0, 2 * Math.PI);
+  ctx.strokeStyle = 'black';
+  ctx.lineWidth   = 2;
+  ctx.stroke();
+  ctx.restore();
+
+  if (!showDots) return;
+
+  ctx.save();
+  for (let i = 0; i < dots.xs.length; i++) {
+    ctx.beginPath();
+    // PsychoPy y is flipped relative to canvas
+    ctx.arc(cx + dots.xs[i], cy - dots.ys[i], CFG.DOT_RADIUS, 0, 2 * Math.PI);
+    ctx.fillStyle = dots.colors[i] === 'red' ? CFG.COLOR_RED : CFG.COLOR_BLUE;
+    ctx.fill();
+  }
+  ctx.restore();
+}
+
+/**
+ * Draw the left/right choice arrows and question text.
+ * @param {string} leftColor – 'blue' | 'red'
+ */
+function drawArrows(ctx, leftColor) {
+  const rightColor  = leftColor === 'blue' ? 'red' : 'blue';
+  const leftLabel   = leftColor  === 'blue' ? 'BLUE DOTS' : 'RED DOTS';
+  const rightLabel  = rightColor === 'red'  ? 'RED DOTS'  : 'BLUE DOTS';
+  const leftHex     = leftColor  === 'blue' ? CFG.COLOR_BLUE : CFG.COLOR_RED;
+  const rightHex    = rightColor === 'red'  ? CFG.COLOR_RED  : CFG.COLOR_BLUE;
+
+  ctx.save();
+  ctx.textAlign = 'center';
+
+  // Question text  –  PsychoPy (0, −240) → canvas (CX, CY+240)
+  ctx.fillStyle = 'black';
+  ctx.font      = '28px Arial';
+  ctx.fillText('I estimate there are more:', CX, CY + 240);
+
+  // Left arrow + label  –  PsychoPy (−300, −300/−370)
+  ctx.font      = 'bold 30px Arial';
+  ctx.fillStyle = 'black';
+  ctx.fillText(leftLabel, CX - 300, CY + 300);
+  ctx.font      = '110px Arial';
+  ctx.fillStyle = leftHex;
+  ctx.fillText('←', CX - 300, CY + 390);
+
+  // Right arrow + label  –  PsychoPy (300, −300/−370)
+  ctx.font      = 'bold 30px Arial';
+  ctx.fillStyle = 'black';
+  ctx.fillText(rightLabel, CX + 300, CY + 300);
+  ctx.font      = '110px Arial';
+  ctx.fillStyle = rightHex;
+  ctx.fillText('→', CX + 300, CY + 390);
+
+  ctx.restore();
+}
+
+/**
+ * White-fill the entire canvas.
+ */
+function clearCanvas(ctx) {
+  ctx.fillStyle = 'white';
+  ctx.fillRect(0, 0, CFG.CANVAS_W, CFG.CANVAS_H);
+}
+
+/**
+ * Create a canvas element sized to CFG.CANVAS_W × CFG.CANVAS_H.
+ */
+function makeCanvas() {
+  const c    = document.createElement('canvas');
+  c.width    = CFG.CANVAS_W;
+  c.height   = CFG.CANVAS_H;
+  c.style.cssText = `
+    display:block; margin:0 auto;
+    max-width:100vw; max-height:100vh;
+    background:white;
+  `;
+  return c;
+}
+
+/**
+ * Replace display_element content with a single canvas.
+ * Returns { canvas, ctx }.
+ */
+function mountCanvas(display_element) {
+  const canvas = makeCanvas();
+  display_element.innerHTML = '';
+  display_element.style.cssText =
+    'display:flex;align-items:center;justify-content:center;' +
+    'width:100%;min-height:100vh;background:white;';
+  display_element.appendChild(canvas);
+  return { canvas, ctx: canvas.getContext('2d') };
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CUSTOM JSPSYCH PLUGIN  –  DOT DISCRIMINATION TRIAL
+// ══════════════════════════════════════════════════════════════════════════════
+//
+//  Trial sequence (within one call):
+//    1. Fixation cross  (T_INTER_LONG ms)  at circle centre
+//    2. Dots shown      (TIME_DOTS ms)     then hidden (circle outline stays)
+//    3. Participant presses ← or →
+//    4. Timeout after T_TIMEOUT ms → records "timeout"
+//
+//  Parameters (passed via the timeline object):
+//    correctColor     'red' | 'blue'
+//    questDriven      true → call STATE.q.nextStim()
+//                     false → look up STATE.difficulties[difficulty]
+//    difficulty       'easy' | 'medium' | 'hard' | 'quest+'
+//    agreeOrDisagree  'agree' | 'disagree'  (determines other-participant colour)
+//    trialType        'pretest' | 'control' | 'confidence'
+// ══════════════════════════════════════════════════════════════════════════════
+
+class DotPlugin {
+  constructor(jsPsych) { this.jsPsych = jsPsych; }
+
+  trial(display_element, trial) {
+    const { canvas, ctx } = mountCanvas(display_element);
+
+    // ── Resolve stimulus intensity ──────────────────────────────────
+    let intensity;
+    if (trial.questDriven) {
+      intensity = STATE.q.nextStim();
+    } else if (trial.isCatch) {
+      intensity = CFG.CATCH_DIFFERENCE;   // fixed large difference — should be obvious
+    } else {
+      const diffs = STATE.difficulties
+        || { easy: STATE.q.nextStim(), medium: STATE.q.nextStim(), hard: STATE.q.nextStim() };
+      intensity = diffs[trial.difficulty];
+    }
+
+    const correctColor  = typeof trial.correctColor === 'function'
+      ? trial.correctColor()
+      : trial.correctColor;
+    const leftDotColor  = getLeftDotColor();
+    const rightDotColor = leftDotColor === 'blue' ? 'red' : 'blue';
+    const dots          = generateDots(correctColor, intensity);
+
+    // Circle centre  –  PsychoPy (0, 100) → canvas (CX, CY−100)
+    const CIRCLE_POS = [CX, CY - 100];
+
+    let startTime = null;
+    let rafId     = null;
+    let finished  = false;
+
+    // ── Animation loop ──────────────────────────────────────────────
+    const render = (ts) => {
+      if (!startTime) startTime = ts;
+      const elapsed = ts - startTime;
+
+      clearCanvas(ctx);
+
+      if (elapsed < CFG.T_INTER_LONG) {
+        // Phase 1: fixation only
+        drawFixation(ctx, CIRCLE_POS[0], CIRCLE_POS[1]);
+      } else {
+        // Phase 2: stimulus
+        const stimElapsed = elapsed - CFG.T_INTER_LONG;
+        const dotsDur     = trial.dotsDuration !== undefined ? trial.dotsDuration : CFG.TIME_DOTS;
+        const showDots    = stimElapsed < dotsDur;
+
+        drawDotStimulus(ctx, dots, CIRCLE_POS, showDots);
+        drawArrows(ctx, leftDotColor);
+
+        // ── Timeout ──────────────────────────────────────────────────
+        if (stimElapsed >= CFG.T_TIMEOUT && !finished) {
+          finished = true;
+          document.removeEventListener('keydown', handleKey);
+          cancelAnimationFrame(rafId);
+
+          clearCanvas(ctx);
+          ctx.fillStyle = 'black';
+          ctx.font      = '42px Arial';
+          ctx.textAlign = 'center';
+          ctx.fillText('Too slow!', CX, CY);
+
+          TRIAL_STATE.timeout         = true;
+          ATTENTION.warningNeeded     = false;  // don't carry a stale warning over
+
+          setTimeout(() => {
+            this.jsPsych.finishTrial({
+              trial_type:          trial.trialType,
+              trial_num:           ++STATE.trialNum,
+              is_catch:            trial.isCatch || false,
+              trial_difficulty:    trial.isCatch ? 'catch' : (trial.difficulty || 'quest+'),
+              current_difference:  intensity,
+              correct_color:       correctColor,
+              left_color:          leftDotColor,
+              right_color:         rightDotColor,
+              timeout:             true,
+            });
+          }, CFG.T_TOO_SLOW);
+          return;
+        }
+      }
+
+      if (!finished) rafId = requestAnimationFrame(render);
+    };
+
+    // ── Key handler ─────────────────────────────────────────────────
+    const handleKey = (e) => {
+      if (finished) return;
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+
+      // Block keypresses during fixation, and also before the first rAF frame
+      // has fired (startTime === null) to avoid a race-condition RT of 0.
+      const now = performance.now();
+      if (!startTime || (now - startTime) < CFG.T_INTER_LONG) return;
+
+      finished = true;
+      document.removeEventListener('keydown', handleKey);
+      cancelAnimationFrame(rafId);
+
+      const rt            = startTime !== null
+        ? Math.round((now - startTime) - CFG.T_INTER_LONG)
+        : 0;
+      const selectedColor = e.key === 'ArrowLeft' ? leftDotColor : rightDotColor;
+      const correct       = selectedColor === correctColor;
+      const firstArrow    = e.key === 'ArrowLeft' ? 'left' : 'right';
+
+      // Update QUEST+ — skip for catch trials to avoid distorting the posterior
+      if (!trial.isCatch) {
+        STATE.q.update(intensity, correct);
+      }
+
+      // ── Attention tracking ──────────────────────────────────────────
+      // 1. Same-key streak (all trial types)
+      if (firstArrow === ATTENTION.lastKey) {
+        ATTENTION.sameKeyStreak++;
+      } else {
+        ATTENTION.sameKeyStreak = 1;
+        ATTENTION.lastKey = firstArrow;
+      }
+
+      // 2. Fast-RT window (test trials only — pretest/demo/catch excluded)
+      if (!trial.isCatch && trial.trialType !== 'pretest' && trial.trialType !== 'demo') {
+        ATTENTION.recentRTs.push(rt);
+        if (ATTENTION.recentRTs.length > CFG.ATTN_RT_COUNT) ATTENTION.recentRTs.shift();
+      }
+
+      const streakWarn = ATTENTION.sameKeyStreak >= CFG.ATTN_STREAK_LIMIT;
+      const rtWarn     = ATTENTION.recentRTs.length >= CFG.ATTN_RT_COUNT &&
+                         ATTENTION.recentRTs.every(r => r < CFG.ATTN_RT_LIMIT);
+
+      if (streakWarn || rtWarn) {
+        ATTENTION.warningNeeded = true;
+        ATTENTION.warningType   = streakWarn ? 'streak' : 'rt';
+        ATTENTION.sameKeyStreak = 0;   // reset so we don't warn every trial
+        ATTENTION.recentRTs     = [];
+      } else {
+        ATTENTION.warningNeeded = false;
+        ATTENTION.warningType   = null;
+      }
+
+      const agreeOrDisagree = trial.agreeOrDisagree;
+      const otherGuessColor = !agreeOrDisagree ? null
+        : agreeOrDisagree === 'agree'
+          ? selectedColor
+          : (selectedColor === 'red' ? 'blue' : 'red');
+
+      // Handoff to next trial
+      Object.assign(TRIAL_STATE, {
+        timeout:         false,
+        selectedColor,
+        otherGuessColor,
+        correctColor,
+        intensity,
+        difficulty:      trial.difficulty || 'quest+',
+        trialType:       trial.trialType,
+        agreeOrDisagree,
+        confidenceValue: null,
+        confidenceRT:    null,
+      });
+
+      this.jsPsych.finishTrial({
+        trial_type:          trial.trialType,
+        trial_num:           ++STATE.trialNum,
+        is_catch:            trial.isCatch || false,
+        trial_difficulty:    trial.isCatch ? 'catch' : (trial.difficulty || 'quest+'),
+        current_difference:  intensity,
+        correct_color:       correctColor,
+        selected_color:      selectedColor,
+        accuracy:            correct ? 1 : 0,
+        first_guess_arrow:   firstArrow,
+        left_color:          leftDotColor,
+        right_color:         rightDotColor,
+        reaction_time_dots:  rt,
+        agreement:           agreeOrDisagree,
+        other_guess_color:   otherGuessColor,
+        timeout:             false,
+      });
+    };
+
+    document.addEventListener('keydown', handleKey);
+    rafId = requestAnimationFrame(render);
+
+    // ── Simulation bot ──────────────────────────────────────────────
+    if (SIMULATE) {
+      const dotsDur   = trial.dotsDuration !== undefined ? trial.dotsDuration : CFG.TIME_DOTS;
+      // For demo trials respond quickly and always correctly so the loop exits on try 1.
+      const simDelay  = trial.trialType === 'demo'
+        ? CFG.T_INTER_LONG + 150
+        : CFG.T_INTER_LONG + dotsDur + 80;
+      setTimeout(() => {
+        if (finished) return;
+        const goCorrect = trial.trialType === 'demo' || Math.random() < 0.75;
+        const simColor  = goCorrect
+          ? correctColor
+          : (correctColor === 'red' ? 'blue' : 'red');
+        const simKey    = simColor === leftDotColor ? 'ArrowLeft' : 'ArrowRight';
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: simKey, bubbles: true }));
+      }, simDelay);
+    }
+  }
+}
+DotPlugin.info = { name: 'dot-plugin', parameters: {} };
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CUSTOM JSPSYCH PLUGIN  –  CONFIDENCE SLIDER
+// ══════════════════════════════════════════════════════════════════════════════
+//
+//  Displays a vertical slider.  Participant moves the mouse over the bar
+//  and clicks to confirm.  Returns { confidence_value, confidence_reaction_time }.
+// ══════════════════════════════════════════════════════════════════════════════
+
+class SliderPlugin {
+  constructor(jsPsych) { this.jsPsych = jsPsych; }
+
+  trial(display_element) {
+    const { canvas, ctx } = mountCanvas(display_element);
+
+    // Slider geometry  (PsychoPy: pos=(0,−50), w=140, h=600)
+    //   Centre in canvas:  (CX, CY+50)
+    const barCX     = CX;
+    const barCY     = CY + 50;
+    const barW      = 140;
+    const barH      = 600;
+    const barTop    = barCY - barH / 2;   //  CY − 250  = 200
+    const barBottom = barCY + barH / 2;   //  CY + 350  = 800
+
+    // Likert labels (by score range 0–100)
+    const LIKERT = [
+      { min: 80, label: 'Very confident' },
+      { min: 60, label: 'Fairly confident' },
+      { min: 40, label: 'Moderately confident' },
+      { min: 20, label: 'Slightly confident' },
+      { min:  0, label: 'Not at all confident' },
+    ];
+
+    let mouseCanvasX = barCX;
+    let mouseCanvasY = barCY;
+    let finished     = false;
+    const startTime  = performance.now();
+
+    const draw = () => {
+      clearCanvas(ctx);
+
+      // Instruction text  –  PsychoPy (0, 350) → canvas (CX, CY−350)
+      ctx.save();
+      ctx.fillStyle = 'black';
+      ctx.font      = '34px Arial';
+      ctx.textAlign = 'center';
+      ctx.fillText('Your confidence level is:', CX, CY - 350);
+
+      // Slider bar (white fill + black border)
+      ctx.fillStyle   = 'white';
+      ctx.fillRect(barCX - barW / 2, barTop, barW, barH);
+      ctx.strokeStyle = 'black';
+      ctx.lineWidth   = 2;
+      ctx.strokeRect(barCX - barW / 2, barTop, barW, barH);
+
+      // Endpoint labels
+      ctx.font = '26px Arial';
+      ctx.fillStyle = 'black';
+      ctx.fillText('Very confident',      barCX, barTop  - 18);
+      ctx.fillText('Not at all confident', barCX, barBottom + 38);
+
+      // Mouse inside bar?
+      const inside = (
+        mouseCanvasX >= barCX - barW / 2 &&
+        mouseCanvasX <= barCX + barW / 2 &&
+        mouseCanvasY >= barTop &&
+        mouseCanvasY <= barBottom
+      );
+
+      if (inside) {
+        const cy  = Math.max(barTop, Math.min(barBottom, mouseCanvasY));
+        const val = Math.round((cy - barTop) / barH * 100);
+
+        // Indicator line
+        ctx.fillStyle = 'black';
+        ctx.fillRect(barCX - 50, cy - 2.5, 100, 5);
+
+        // Likert label to the right of the bar
+        const entry = LIKERT.find(l => val >= l.min) || LIKERT[LIKERT.length - 1];
+        ctx.font      = '22px Arial';
+        ctx.textAlign = 'left';
+        ctx.fillStyle = 'black';
+        ctx.fillText(entry.label, barCX + barW / 2 + 20, cy + 8);
+      }
+
+      ctx.restore();
+    };
+
+    // ── Convert page-mouse → canvas coordinates ─────────────────────
+    const toCanvasCoords = (e) => {
+      const rect   = canvas.getBoundingClientRect();
+      const scaleX = CFG.CANVAS_W / rect.width;
+      const scaleY = CFG.CANVAS_H / rect.height;
+      return [
+        (e.clientX - rect.left) * scaleX,
+        (e.clientY - rect.top)  * scaleY,
+      ];
+    };
+
+    const handleMove = (e) => {
+      [mouseCanvasX, mouseCanvasY] = toCanvasCoords(e);
+      draw();
+    };
+
+    const handleClick = (e) => {
+      if (finished) return;
+      const [cx, cy] = toCanvasCoords(e);
+      const inside   = (
+        cx >= barCX - barW / 2 && cx <= barCX + barW / 2 &&
+        cy >= barTop && cy <= barBottom
+      );
+      if (!inside) return;
+
+      finished = true;
+      canvas.removeEventListener('mousemove', handleMove);
+      canvas.removeEventListener('click',     handleClick);
+
+      const clampY = Math.max(barTop, Math.min(barBottom, cy));
+      const val    = Math.round((clampY - barTop) / barH * 100);
+      const rt     = Math.round(performance.now() - startTime);
+
+      TRIAL_STATE.confidenceValue = val;
+      TRIAL_STATE.confidenceRT    = rt;
+
+      this.jsPsych.finishTrial({
+        confidence_value:         val,
+        confidence_reaction_time: rt,
+      });
+    };
+
+    canvas.addEventListener('mousemove', handleMove);
+    canvas.addEventListener('click',     handleClick);
+    canvas.style.cursor = 'crosshair';
+    draw(); // initial render
+
+    // ── Simulation bot ──────────────────────────────────────────────
+    if (SIMULATE) {
+      setTimeout(() => {
+        if (finished) return;
+        const rect    = canvas.getBoundingClientRect();
+        const scaleY  = CFG.CANVAS_H / rect.height;
+        const scaleX  = CFG.CANVAS_W / rect.width;
+        // Pick a random position inside the slider bar
+        const canvasY = barTop + Math.random() * barH;
+        const clientX = rect.left + (barCX / scaleX);
+        const clientY = rect.top  + (canvasY / scaleY);
+        canvas.dispatchEvent(new MouseEvent('mousemove', { clientX, clientY, bubbles: true }));
+        setTimeout(() => {
+          canvas.dispatchEvent(new MouseEvent('click',     { clientX, clientY, bubbles: true }));
+        }, 40);
+      }, 120);
+    }
+  }
+}
+SliderPlugin.info = { name: 'slider-plugin', parameters: {} };
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  CUSTOM JSPSYCH PLUGIN  –  KEEP / CHANGE
+// ══════════════════════════════════════════════════════════════════════════════
+//
+//  Shows participant's initial decision and the other participant's response.
+//  Participant presses ← or → to keep or change.
+// ══════════════════════════════════════════════════════════════════════════════
+
+class KeepChangePlugin {
+  constructor(jsPsych) { this.jsPsych = jsPsych; }
+
+  trial(display_element) {
+    // Safety: skip if the preceding dot trial timed out
+    if (TRIAL_STATE.timeout) {
+      this.jsPsych.finishTrial({ skipped: true, trial_label: 'keep_change_skipped' });
+      return;
+    }
+
+    const { canvas, ctx } = mountCanvas(display_element);
+
+    const leftKC   = getLeftKeepChange();             // 'keep' | 'change'
+    const rightKC  = leftKC === 'keep' ? 'change' : 'keep';
+    const selColor = TRIAL_STATE.selectedColor;
+    const othColor = TRIAL_STATE.otherGuessColor;
+
+    const selHex   = selColor === 'blue' ? CFG.COLOR_BLUE : CFG.COLOR_RED;
+    const othHex   = othColor === 'blue' ? CFG.COLOR_BLUE : CFG.COLOR_RED;
+    const selLabel = selColor === 'blue' ? 'BLUE' : 'RED';
+    const othLabel = othColor === 'blue' ? 'BLUE' : 'RED';
+
+    // ── Draw the screen (static) ────────────────────────────────────
+    clearCanvas(ctx);
+    ctx.save();
+    ctx.textAlign = 'center';
+
+    // "YOUR DECISION WAS:"  –  PsychoPy (0, 350) → canvas (CX, CY−350)
+    ctx.fillStyle = 'black';
+    ctx.font      = 'bold 34px Arial';
+    ctx.fillText('YOUR DECISION WAS:', CX, CY - 350);
+
+    ctx.fillStyle = selHex;
+    ctx.font      = 'bold 54px Arial';
+    ctx.fillText(selLabel, CX, CY - 285);
+
+    // "OTHER PARTICIPANT'S DECISION:"  –  PsychoPy (0, 200)
+    ctx.fillStyle = 'black';
+    ctx.font      = 'bold 30px Arial';
+    ctx.fillText("OTHER PARTICIPANT'S DECISION:", CX, CY - 200);
+
+    ctx.fillStyle = othHex;
+    ctx.font      = 'bold 54px Arial';
+    ctx.fillText(othLabel, CX, CY - 135);
+
+    // Left arrow  –  PsychoPy (−200, −160/−250) → canvas (CX−200, CY+160/250)
+    ctx.fillStyle = 'black';
+    ctx.font      = 'bold 36px Arial';
+    ctx.fillText(leftKC.toUpperCase(), CX - 200, CY + 165);
+    ctx.font      = '110px Arial';
+    ctx.fillText('←', CX - 200, CY + 270);
+
+    // Right arrow
+    ctx.font      = 'bold 36px Arial';
+    ctx.fillText(rightKC.toUpperCase(), CX + 200, CY + 165);
+    ctx.font      = '110px Arial';
+    ctx.fillText('→', CX + 200, CY + 270);
+
+    ctx.restore();
+
+    const startTime = performance.now();
+
+    const handleKey = (e) => {
+      if (e.key !== 'ArrowLeft' && e.key !== 'ArrowRight') return;
+      document.removeEventListener('keydown', handleKey);
+
+      const rt       = Math.round(performance.now() - startTime);
+      const decision = e.key === 'ArrowLeft' ? leftKC : rightKC;
+      const finalColor = decision === 'keep'
+        ? TRIAL_STATE.selectedColor
+        : (TRIAL_STATE.selectedColor === 'red' ? 'blue' : 'red');
+      const correct2nd = finalColor === TRIAL_STATE.correctColor;
+
+      this.jsPsych.finishTrial({
+        trial_label:               'keep_change',
+        second_guess_decision:     decision,
+        second_guess_arrow:        e.key === 'ArrowLeft' ? 'left' : 'right',
+        second_guess_color:        finalColor,
+        second_guess_accuracy:     correct2nd ? 1 : 0,
+        second_guess_reaction_time: rt,
+        left_opinion:              leftKC,
+        right_opinion:             rightKC,
+        confidence_value:          TRIAL_STATE.confidenceValue,
+        confidence_reaction_time:  TRIAL_STATE.confidenceRT,
+        // Echo key dot-trial fields so every row is self-contained
+        selected_color:            TRIAL_STATE.selectedColor,
+        other_guess_color:         TRIAL_STATE.otherGuessColor,
+        agreement:                 TRIAL_STATE.agreeOrDisagree,
+        trial_type:                TRIAL_STATE.trialType,
+        trial_difficulty:          TRIAL_STATE.difficulty,
+        current_difference:        TRIAL_STATE.intensity,
+        correct_color:             TRIAL_STATE.correctColor,
+      });
+    };
+
+    document.addEventListener('keydown', handleKey);
+
+    // ── Simulation bot ──────────────────────────────────────────────
+    if (SIMULATE) {
+      setTimeout(() => {
+        const simKey = Math.random() < 0.5 ? 'ArrowLeft' : 'ArrowRight';
+        document.dispatchEvent(new KeyboardEvent('keydown', { key: simKey, bubbles: true }));
+      }, 120);
+    }
+  }
+}
+KeepChangePlugin.info = { name: 'keep-change-plugin', parameters: {} };
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  LOADING SPINNER  (4 s animated canvas)
+// ══════════════════════════════════════════════════════════════════════════════
+
+function makeSpinnerTrial() {
+  return {
+    type: jsPsychCallFunction,
+    async: true,
+    func: function (done) {
+      const { canvas, ctx } = mountCanvas(document.querySelector('.jspsych-content'));
+      const n      = 13;
+      const r      = 40;
+      const dotR   = 6;
+      const dur    = CFG.SPINNER_DURATION;
+      const start  = performance.now();
+      let   rafId  = null;
+
+      const frame = (ts) => {
+        const elapsed = ts - start;
+        if (elapsed >= dur) {
+          cancelAnimationFrame(rafId);
+          done();
+          return;
+        }
+
+        clearCanvas(ctx);
+        const t = elapsed / 1000;
+
+        // Spinning dots
+        ctx.save();
+        for (let i = 0; i < n; i++) {
+          const angle   = (2 * Math.PI * i / n) + t * 3.5;
+          const alpha   = 0.2 + 0.8 * ((i / n));
+          const x       = CX + r * Math.cos(angle);
+          const y       = CY + r * Math.sin(angle);
+          ctx.globalAlpha = alpha;
+          ctx.beginPath();
+          ctx.arc(x, y, dotR, 0, 2 * Math.PI);
+          ctx.fillStyle = 'black';
+          ctx.fill();
+        }
+        ctx.restore();
+
+        // Message
+        ctx.fillStyle = 'black';
+        ctx.font      = '26px Arial';
+        ctx.textAlign = 'center';
+        ctx.fillText('Retrieving responses from other participants…', CX, CY + 100);
+
+        rafId = requestAnimationFrame(frame);
+      };
+
+      rafId = requestAnimationFrame(frame);
+    },
+  };
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  ATTENTION HELPERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+function resetAttention() {
+  ATTENTION.lastKey       = null;
+  ATTENTION.sameKeyStreak = 0;
+  ATTENTION.recentRTs     = [];
+  ATTENTION.warningNeeded = false;
+  ATTENTION.warningType   = null;
+}
+
+/**
+ * Returns a FRESH warning trial object each time it is called.
+ * Must NOT be reused — jsPsych 7 tracks node identity internally,
+ * so sharing one object across multiple timeline positions breaks
+ * the conditional_function after the first trigger.
+ */
+function makeWarningTrial() {
+  return {
+    timeline: [{
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function () {
+        if (ATTENTION.warningType === 'streak') {
+          return `<div class="instr">
+            <h1>⚠ Please pay attention</h1>
+            <p>We noticed you pressed the same key
+               <strong>${CFG.ATTN_STREAK_LIMIT} times in a row</strong>.</p>
+            <p>Please look carefully at each dot cloud before responding —
+               the majority colour changes on every trial.</p>
+            <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+          </div>`;
+        }
+        return `<div class="instr">
+          <h1>⚠ Please slow down</h1>
+          <p>We noticed ${CFG.ATTN_RT_COUNT} consecutive responses
+             under <strong>${CFG.ATTN_RT_LIMIT} ms</strong> — faster than
+             it is possible to process the image.</p>
+          <p>Please take a moment to look at the dots carefully
+             before pressing a key.</p>
+          <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+        </div>`;
+      },
+      choices:   [' '],
+      data:      { trial_label: 'attention_warning' },
+      on_finish: function () {
+        ATTENTION.warningNeeded = false;
+        ATTENTION.warningType   = null;
+      },
+    }],
+    conditional_function: () => ATTENTION.warningNeeded && !TRIAL_STATE.timeout,
+  };
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  TRIAL LIST BUILDERS
+// ══════════════════════════════════════════════════════════════════════════════
+
+/** 100 pretest trials, all QUEST+-driven. */
+function buildPretestTrials() {
+  const half   = CFG.NB_PRETESTS >> 1;
+  const colors = shuffle([...Array(half).fill('blue'), ...Array(half).fill('red')]);
+
+  return colors.map(color => ({
+    type:            DotPlugin,
+    correctColor:    color,
+    questDriven:     true,
+    difficulty:      'quest+',
+    trialType:       'pretest',
+    agreeOrDisagree: null,
+  }));
+}
+
+/**
+ * Pick N catch-trial positions from 0…total-1, spaced at least minSpacing apart.
+ * Returns a Set of indices.
+ */
+function getCatchPositions(total, count, minSpacing) {
+  const positions = new Set();
+  let attempts = 0;
+  while (positions.size < count && attempts < 50000) {
+    const pos       = Math.floor(Math.random() * total);
+    const tooClose  = [...positions].some(p => Math.abs(p - pos) < minSpacing);
+    if (!tooClose) positions.add(pos);
+    attempts++;
+  }
+  return positions;
+}
+
+/** 240 + 8 catch trials for control or confidence condition. */
+function buildTestTrials(condition) {
+  const N    = CFG.NB_TESTS_PER_COND;
+  const half = N >> 1;
+
+  // Balanced agree/disagree × colour pairs  (for the N regular trials)
+  const pairs = [];
+  for (const color of ['blue', 'red']) {
+    for (let i = 0; i < half >> 1; i++) pairs.push({ agree: 'agree',    color });
+    for (let i = 0; i < half >> 1; i++) pairs.push({ agree: 'disagree', color });
+  }
+  shuffle(pairs);
+
+  // Equal-thirds difficulty list  (for regular trials)
+  const nEach = Math.floor(N / 3);
+  const diffs = shuffle([
+    ...Array(nEach).fill('easy'),
+    ...Array(nEach).fill('medium'),
+    ...Array(N - 2 * nEach).fill('hard'),
+  ]);
+
+  // Choose which of the N slots become catch trials
+  const catchSet = getCatchPositions(N, CFG.NB_CATCH_PER_BLOCK, CFG.CATCH_MIN_SPACING);
+
+  const trials = [];
+
+  for (let i = 0; i < N; i++) {
+    const isCatch         = catchSet.has(i);
+    const correctColor    = pairs[i].color;
+    const agreeOrDisagree = pairs[i].agree;
+    const difficulty      = isCatch ? 'catch' : diffs[i];
+
+    // ── 1. Dot trial ────────────────────────────────────────────────
+    trials.push({
+      type:            DotPlugin,
+      correctColor,
+      questDriven:     false,
+      isCatch,
+      difficulty,
+      agreeOrDisagree,
+      trialType:       condition,
+    });
+
+    // ── 1b. Attention warning (fresh object each time — see makeWarningTrial)
+    trials.push(makeWarningTrial());
+
+    // ── 2. Confidence slider  OR  1.22 s blank ─────────────────────
+    if (condition === 'confidence') {
+      trials.push({
+        timeline: [{ type: SliderPlugin }],
+        conditional_function: () => !TRIAL_STATE.timeout,
+      });
+    } else {
+      trials.push({
+        timeline: [{
+          type:           jsPsychHtmlKeyboardResponse,
+          stimulus:       '<div style="background:white;width:100vw;height:100vh;"></div>',
+          choices:        'NO_KEYS',
+          trial_duration: CFG.T_BLANK,
+          data:           { trial_label: 'blank_control' },
+        }],
+        conditional_function: () => !TRIAL_STATE.timeout,
+      });
+    }
+
+    // ── 3. 0.75 s inter-trial blank ─────────────────────────────────
+    trials.push({
+      timeline: [{
+        type:           jsPsychHtmlKeyboardResponse,
+        stimulus:       '<div style="background:white;width:100vw;height:100vh;"></div>',
+        choices:        'NO_KEYS',
+        trial_duration: CFG.T_INTER_LONG,
+        data:           { trial_label: 'blank_inter' },
+      }],
+      conditional_function: () => !TRIAL_STATE.timeout,
+    });
+
+    // ── 4. Keep / change ────────────────────────────────────────────
+    trials.push({
+      timeline: [{ type: KeepChangePlugin }],
+      conditional_function: () => !TRIAL_STATE.timeout,
+    });
+
+    // ── 5. 250 ms post-trial blank ──────────────────────────────────
+    trials.push({
+      timeline: [{
+        type:           jsPsychHtmlKeyboardResponse,
+        stimulus:       '<div style="background:white;width:100vw;height:100vh;"></div>',
+        choices:        'NO_KEYS',
+        trial_duration: 250,
+        data:           { trial_label: 'blank_post' },
+      }],
+      conditional_function: () => !TRIAL_STATE.timeout,
+    });
+  }
+
+  return trials;
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  INSTRUCTION SCREEN HELPER
+// ══════════════════════════════════════════════════════════════════════════════
+
+function instrScreen(title, body) {
+  return {
+    type:     jsPsychHtmlKeyboardResponse,
+    stimulus: `<div class="instr">
+      <h1>${title}</h1>
+      ${body}
+      <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+    </div>`,
+    choices:  [' '],
+  };
+}
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  JSPSYCH INIT
+// ══════════════════════════════════════════════════════════════════════════════
+
+const jsPsych = initJsPsych({
+  on_finish: function () {
+    if (SIMULATE) {
+      // In simulation mode: download the CSV locally instead of posting to server.
+      jsPsych.data.get().localSave('csv', 'simulation_data.csv');
+      document.body.innerHTML =
+        '<div class="instr"><h1>Simulation complete</h1>' +
+        '<p>CSV downloaded as <strong>simulation_data.csv</strong>.</p></div>';
+      return;
+    }
+
+    // ── cognition.run saves data automatically — no manual POST needed. ──
+    // When this experiment runs on cognition.run, their platform captures
+    // all jsPsych trial data server-side as soon as on_finish is called.
+    // All you need to do here is redirect the participant back to Prolific.
+    //
+    // ↓ Replace YOUR_COMPLETION_CODE with the code from your Prolific study.
+    window.location.href =
+      'https://app.prolific.com/submissions/complete?cc=YOUR_COMPLETION_CODE';
+  },
+});
+
+// ── Global simulation bot ─────────────────────────────────────────────────────
+//  Handles all HTML-based trials: instruction screens (press SPACE),
+//  button-response trials (click correct button), blank screens (ignored).
+//  Canvas-based trials (DotPlugin / SliderPlugin / KeepChangePlugin) respond
+//  via their own internal simulation code above.
+if (SIMULATE) {
+  let _lastHTML = '';
+
+  setInterval(() => {
+    const display = document.querySelector('.jspsych-display-element');
+    if (!display) return;
+
+    // Canvas trials respond internally — leave them alone.
+    if (display.querySelector('canvas')) return;
+
+    const html = display.innerHTML;
+    if (html === _lastHTML) return;   // already responded to this trial
+    _lastHTML = html;
+
+    // ── Button-response trial (consent, comprehension, debrief, etc.) ──
+    const buttons = display.querySelectorAll('.jspsych-btn');
+    if (buttons.length) {
+      // Comprehension check answer is always index 1 (correct option).
+      // All other button trials get index 0 (first / only button).
+      const isComprehension = display.textContent.includes('what happens next');
+      const idx = isComprehension ? 1 : 0;
+      setTimeout(() => { buttons[idx] && buttons[idx].click(); }, 160);
+      return;
+    }
+
+    // ── Keyboard-response trial (instruction / feedback screens) ──
+    setTimeout(() => {
+      document.dispatchEvent(new KeyboardEvent('keydown', { key: ' ', bubbles: true }));
+    }, 160);
+  }, 250);
+}
+
+// Attach participant-level fields to every trial row
+jsPsych.data.addProperties({
+  prolific_pid:     PROLIFIC_PID,
+  study_id:         PROLIFIC_STUDY_ID,
+  session_id:       PROLIFIC_SESSION,
+  arrows_position:  ARROWS_POSITION,
+  left_dot_color:   getLeftDotColor(),
+  left_keep_change: getLeftKeepChange(),
+  rating_type:      CFG.RATING_TYPE,
+});
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  EXPERIMENT TIMELINE
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── Comprehension check state ─────────────────────────────────────
+let comprehensionPassed = false;
+
+// ── Build all trial lists at page load ────────────────────────────
+// Test trial structures (colours, agree/disagree, difficulty label) are fixed
+// here.  The actual dot intensity is resolved at runtime inside DotPlugin by
+// reading STATE.difficulties, which is populated by the call-function that
+// runs right after the pretest.  Building upfront is required so jsPsych can
+// see non-empty arrays when it initialises the timeline.
+const pretestTrials    = buildPretestTrials();
+const controlTrials    = buildTestTrials('control');
+const confidenceTrials = buildTestTrials('confidence');
+
+const timeline = [
+
+  // ── 0. Full-screen prompt (skipped in simulation — browsers block synthetic fullscreen)
+  ...(!SIMULATE ? [{
+    type:         jsPsychFullscreen,
+    fullscreen_mode: true,
+    message:      `<div class="instr">
+      <h1>Full-screen mode</h1>
+      <p>This experiment must be run in full-screen.<br>
+         Click the button below to continue.</p>
+    </div>`,
+    button_label: 'Go full-screen',
+  }] : []),
+
+  // ── 1. Consent form ─────────────────────────────────────────────
+  {
+    type:     jsPsychHtmlButtonResponse,
+    stimulus: `<div class="instr">
+      <h1>Informed Consent</h1>
+      <p>You are about to take part in a study on visual perception and
+         decision-making. The task takes approximately <strong>30–40 minutes</strong>.</p>
+      <p>Your participation is voluntary. You may withdraw at any time by
+         closing the browser, but you will not receive payment if you do so.</p>
+      <p>All data are collected anonymously and will be used for research
+         purposes only.</p>
+      <p>By clicking <strong>I agree</strong> you confirm that you have read
+         and understood this information and consent to participate.</p>
+    </div>`,
+    choices: ['I agree'],
+  },
+
+  // ── 2. General welcome ──────────────────────────────────────────
+  instrScreen('Welcome', `
+    <p>In this experiment, you will see a circle filled with
+       <strong style="color:${CFG.COLOR_RED}">RED</strong> and
+       <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots.</p>
+    <p>Your task is to decide whether there are more
+       <strong style="color:${CFG.COLOR_RED}">RED</strong> or
+       <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots.</p>
+    <p>Use the <strong>← LEFT</strong> and <strong>→ RIGHT</strong> arrow
+       keys to respond.</p>
+  `),
+
+  // ── 3. Dot-task instructions ────────────────────────────────────
+  instrScreen('How to respond', `
+    <p>Each trial begins with a fixation cross (<strong>+</strong>).</p>
+    <p>The dots then appear briefly — they will disappear after
+       <strong>half a second</strong>, so pay close attention!</p>
+    <p>After the dots disappear, the response arrows remain on screen.
+       Press ← or → as quickly and accurately as possible.</p>
+    <p>There is no time limit shown — but if you take more than
+       <strong>7 seconds</strong> the trial will be skipped.</p>
+  `),
+
+  // ── 4. Interactive dot demo ──────────────────────────────────────
+  // Participant must get at least one trial correct before proceeding.
+  (() => {
+    let demoPassed = false;
+    return {
+      timeline: [
+        // Demo dot trial — large difference (80) so colours are obvious;
+        // dots stay on screen for 7 s so the participant can study them.
+        {
+          type:            DotPlugin,
+          correctColor:    () => Math.random() < 0.5 ? 'blue' : 'red',
+          questDriven:     false,
+          difficulty:      'easy',
+          dotsDuration:    7000,
+          agreeOrDisagree: null,
+          trialType:       'demo',
+          on_start: function () {
+            STATE.q = STATE.q || new QuestPlus();
+            // difference = 80 → 120 dots of one colour vs 40 of the other
+            STATE.difficulties = { easy: 80, medium: 40, hard: 16 };
+          },
+        },
+        // Feedback
+        {
+          type: jsPsychHtmlKeyboardResponse,
+          stimulus: function () {
+            const last = jsPsych.data.get().last(1).values()[0];
+            if (last && !last.timeout && last.accuracy === 1) {
+              demoPassed = true;
+              return `<div class="instr">
+                <h1 class="correct">✓ Correct!</h1>
+                <p>Well done. Now we will practice with dots that
+                   disappear quickly.</p>
+                <p class="hint">Press <strong>SPACE</strong> to continue.</p>
+              </div>`;
+            }
+            return `<div class="instr">
+              <h1 class="wrong">✗ Incorrect — try again</h1>
+              <p>Look carefully at whether there are more
+                 <strong style="color:${CFG.COLOR_RED}">RED</strong> or
+                 <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots,
+                 then press the matching arrow.</p>
+              <p class="hint">Press <strong>SPACE</strong> to try again.</p>
+            </div>`;
+          },
+          choices: [' '],
+        },
+      ],
+      loop_function: () => !demoPassed,
+    };
+  })(),
+
+  // ── 5. Pretest instructions ──────────────────────────────────────
+  instrScreen('Training phase', `
+    <p>Now the dots will only be visible for <strong>half a second</strong>.</p>
+    <p>Try to respond as <strong>quickly</strong> and
+       <strong>accurately</strong> as possible.</p>
+  `),
+
+  // ── 6. Pretest (100 trials, QUEST+-driven) ───────────────────────
+  {
+    timeline: pretestTrials,
+    on_start: function () {
+      STATE.q           = new QuestPlus();
+      STATE.trialNum    = 0;
+      STATE.difficulties = null;
+    },
+  },
+
+  // ── 7. Compute difficulty levels from QUEST+ posterior ───────────
+  {
+    type: jsPsychCallFunction,
+    func: function () {
+      STATE.difficulties = STATE.q.getDifficulties();
+      if (!STATE.difficulties) {
+        // Fallback: use nextStim for all three (shouldn't happen after 100 trials)
+        const mid = STATE.q.nextStim();
+        STATE.difficulties = { easy: mid, medium: mid, hard: mid };
+      }
+      // Trial arrays were built at page load; nothing to do here.
+      // STATE.difficulties is now set and DotPlugin will read it at runtime.
+    },
+  },
+
+  // ── 8. Control block instructions ───────────────────────────────
+  instrScreen('New phase: updating your decision', `
+    <p>From now on, after your initial decision, you will see additional
+       information: the response of <strong>a participant from a previous
+       study</strong> who saw the exact same cloud of dots as you.</p>
+    <p>You can then either <strong>KEEP</strong> your original answer or
+       <strong>CHANGE</strong> it to the other colour.</p>
+    <p>Use the <strong>← LEFT</strong> and <strong>→ RIGHT</strong> arrow
+       keys to keep or change — the labels will always be shown on screen.</p>
+  `),
+
+  // ── 9. Comprehension check (loop until correct) ──────────────────
+  (() => {
+    comprehensionPassed = false;
+    let lastAnswer      = null;
+
+    const question = {
+      type:     jsPsychHtmlButtonResponse,
+      stimulus: `<div class="instr">
+        <h1>Comprehension check</h1>
+        <p>After giving your initial answer, what happens next?</p>
+      </div>`,
+      choices: [
+        'The experiment moves straight to the next trial',
+        'You see another participant\'s answer and can keep or change your original answer',
+        'You must always change your answer',
+      ],
+      button_html: '<button class="choice">%choice%</button>',
+      on_finish: function (data) { lastAnswer = data.response; },
+    };
+
+    const feedback = {
+      type: jsPsychHtmlKeyboardResponse,
+      stimulus: function () {
+        if (lastAnswer === 1) {          // index 1 = correct answer
+          comprehensionPassed = true;
+          return `<div class="instr">
+            <h1 class="correct">Correct!</h1>
+            <p>After your initial decision, you will see another participant's
+               response. You can then freely <strong>keep</strong> or
+               <strong>change</strong> your original answer.</p>
+            <p>For example: if you initially chose
+               <strong style="color:${CFG.COLOR_RED}">RED</strong> and then
+               click <strong>CHANGE</strong>, your new answer becomes
+               <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> —
+               meaning you now think there are more
+               <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots.
+               If you click <strong>KEEP</strong>, your answer stays
+               <strong style="color:${CFG.COLOR_RED}">RED</strong>.</p>
+            <p class="hint">Press <strong>SPACE</strong> to begin.</p>
+          </div>`;
+        }
+        return `<div class="instr">
+          <h1 class="wrong">Incorrect — please read carefully</h1>
+          <p>After your initial dot decision, you will see the response of
+             another participant who saw the same dots. You can then freely
+             choose to <strong>keep</strong> your original answer or
+             <strong>change</strong> it to the other colour.</p>
+          <p>For example: if you initially chose
+             <strong style="color:${CFG.COLOR_RED}">RED</strong> and then
+             click <strong>CHANGE</strong>, your new answer becomes
+             <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> —
+             meaning you now think there are more
+             <strong style="color:${CFG.COLOR_BLUE}">BLUE</strong> dots.
+             If you click <strong>KEEP</strong>, your answer stays
+             <strong style="color:${CFG.COLOR_RED}">RED</strong>.</p>
+          <p class="hint">Press <strong>SPACE</strong> to try again.</p>
+        </div>`;
+      },
+      choices: [' '],
+    };
+
+    return {
+      timeline: [question, feedback],
+      loop_function: () => !comprehensionPassed,
+    };
+  })(),
+
+  // ── 10. Loading spinner ──────────────────────────────────────────
+  makeSpinnerTrial(),
+
+  // ── 11. Control block  (240 trials) ─────────────────────────────
+  // Reset attention counters so pretest keypresses don't carry over.
+  { type: jsPsychCallFunction, func: resetAttention },
+  { timeline: controlTrials },
+
+  // ── 12. Confidence block instructions ───────────────────────────
+  instrScreen('New phase: rating your confidence', `
+    <p>The rules are exactly the same as before, but now you will also
+       rate your <strong>confidence</strong> after each initial decision.</p>
+    <p>A vertical slider will appear. Move your mouse to the position
+       that best reflects your confidence level — from
+       <em>Not at all confident</em> at the bottom to
+       <em>Very confident</em> at the top — then <strong>click</strong>
+       to confirm.</p>
+  `),
+
+  // ── 13. Confidence block  (240 trials) ──────────────────────────
+  // Reset attention counters between blocks.
+  { type: jsPsychCallFunction, func: resetAttention },
+  { timeline: confidenceTrials },
+
+  // ── 14. Debrief ─────────────────────────────────────────────────
+  {
+    type:     jsPsychHtmlButtonResponse,
+    stimulus: `<div class="instr">
+      <h1>Debrief</h1>
+      <p><strong>Thank you for participating!</strong></p>
+      <p>In this experiment, the "other participant's decision" was
+         <em>not</em> from a real person — it was generated by the
+         computer to be either the same as or opposite to your response.</p>
+      <p>We are studying how people integrate social information when
+         updating their perceptual decisions, and whether confidence
+         ratings influence this process.</p>
+      <p>If you have any questions, please contact the research team.</p>
+      <p>Click the button below to submit your responses and return to
+         Prolific.</p>
+    </div>`,
+    choices: ['Submit and return to Prolific'],
+  },
+
+]; // end timeline
+
+
+// ══════════════════════════════════════════════════════════════════════════════
+//  RUN
+// ══════════════════════════════════════════════════════════════════════════════
+
+jsPsych.run(timeline);
+
+</script>
+</body>
+</html>
